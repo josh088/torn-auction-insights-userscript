@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Auction Insights
 // @namespace    https://github.com/josh088/torn-auction-insights-userscript
-// @version      1.1.0
+// @version      1.2.0
 // @description  Annotates Torn's auction house with realised-price valuations, so you can size a maximum bid without leaving the page.
 // @author       josh088
 // @match        https://www.torn.com/amarket.php*
@@ -245,7 +245,13 @@
      * sales of the exact roll. That is what `tier` is shown for.
      */
     function verdict(valuation) {
-        if (!valuation.basis.sufficient) return { label: 'no data', tone: '#8b8b8b' };
+        if (!valuation.basis.sufficient) {
+            // "no data" would be a lie once raw sales are attached, and the difference matters:
+            // one is "nothing is known", the other is "too little to summarise, look yourself".
+            return (valuation.recent_sales || []).length
+                ? { label: 'thin', tone: '#b08a4f' }
+                : { label: 'no data', tone: '#8b8b8b' };
+        }
 
         const percentile = valuation.current_bid_percentile;
         if (percentile === null || percentile === undefined) return { label: 'priced', tone: '#7aa7d9' };
@@ -318,6 +324,13 @@
             .map((s) => `<div>${s.sold_at.slice(0, 10)} — <b>${money(s.price)}</b> (${s.bids ?? '?'} bids) to ${s.buyer_name ?? '?'}</div>`)
             .join('');
 
+        // Shown whatever the basis said. A roll too thin to summarise is usually not a roll
+        // nothing is known about, and the raw rows are the evidence the summary was declining
+        // to draw a conclusion from — never averaged here, for the same reason.
+        const sales = (v.recent_sales || [])
+            .map((s) => `<div>${s.sold_at.slice(0, 10)} — <b>${money(s.price)}</b> (${s.bids ?? '?'} bids)</div>`)
+            .join('');
+
         panel.innerHTML = `
             <div style="display:flex;justify-content:space-between;align-items:start">
               <div><b style="font-size:14px">${listing._name}</b><br>
@@ -347,7 +360,12 @@
                 <span style="opacity:.7">(${v.target_win}% win rate)</span><br>
                 <span style="opacity:.7">Bid it once, as your true maximum, just above a round number — never on one.</span>
               </div>
-            ` : '<div style="opacity:.7">No comparable sales. Nothing to size a bid from.</div>'}
+            ` : '<div style="opacity:.7">No comparable sales — nothing to size a bid from. Any recorded sales of this exact roll are listed below.</div>'}
+
+            ${sales ? `<div style="margin-top:10px"><b>Recorded sales of this exact roll</b>
+                ${sales}
+                ${v.basis.sufficient ? '' : '<div style="opacity:.7">Too few to summarise, which is not the same as nothing. Read them as observations, not a price.</div>'}
+              </div>` : ''}
 
             ${v.exit ? `
               <div style="margin-top:10px"><b>Item market — the exit</b><br>

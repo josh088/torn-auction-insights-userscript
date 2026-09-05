@@ -5,7 +5,7 @@ so you can size a maximum bid without leaving the page.
 
 ![tier](https://img.shields.io/badge/requests%20to%20Torn-zero-brightgreen)
 
-Each listing gets a badge — `cheap` / `fair` / `rich` / `no data` — with the median realised
+Each listing gets a badge — `cheap` / `fair` / `rich` / `thin` / `no data` — with the median realised
 price, a recommended maximum, and where the live bid sits in that history. Click it for the
 win-probability curve, the monthly trend, the item-market exit and any prior sale of that exact
 physical item.
@@ -66,6 +66,12 @@ from something wider than the roll you are looking at. The API always says how f
 | `bonus_family_flat` | Every value of this bonus pooled, because price does not track the value here |
 | `bonus_neighbours` | Only nearby values, because price *does* track the value |
 | `insufficient` | Nothing comparable enough. **There is no price, and that is the answer** |
+
+A refused basis still shows any **recorded sales of the exact roll** in the detail panel — the
+badge reads `thin` rather than `no data` when it has some. MP 40 `Revitalize:14` has two sales,
+$3.46bn and $3.00bn; that cannot support a percentile, but against a $3.5bn live bid it is the
+whole answer. Read those rows as observations, never as a price — two sales have no middle
+worth naming.
 
 That last one is deliberate. Pooling a whole family where the roll matters would price a top
 roll as a common one, and an invented number is worse than a blank because it renders
