@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Auction Insights
 // @namespace    https://github.com/josh088/torn-auction-insights-userscript
-// @version      1.0.0
+// @version      1.0.1
 // @description  Annotates Torn's auction house with realised-price valuations, so you can size a maximum bid without leaving the page.
 // @author       josh088
 // @match        https://www.torn.com/amarket.php*
@@ -167,7 +167,7 @@
             chunks.push(listings.slice(i, i + MAX_BATCH));
         }
 
-        Promise.all(chunks.map(requestChunk))
+        Promise.all(chunks.map((chunk) => requestChunk(chunk, token)))
             .then((results) => {
                 const paired = results.flat();
                 paired.forEach(({ valuation, listing }) => annotateRow(listing, valuation));
@@ -176,50 +176,50 @@
             .catch((message) => renderPanel([], message));
     }
 
-    function requestChunk(listings) {
-      return new Promise((resolve, reject) => {
-        GM_xmlhttpRequest({
-            method: 'POST',
-            url: `${API_BASE}/auction-valuations`,
-            headers: {
-                'Content-Type': 'application/json',
-                Accept: 'application/json',
-                Authorization: `Bearer ${token}`,
-            },
-            data: JSON.stringify({ listings: listings.map(stripLocalKeys) }),
-            onload(response) {
-                if (response.status === 401) {
-                    return reject('API token rejected. Use the menu to set a new one.');
-                }
+    function requestChunk(listings, token) {
+        return new Promise((resolve, reject) => {
+            GM_xmlhttpRequest({
+                method: 'POST',
+                url: `${API_BASE}/auction-valuations`,
+                headers: {
+                    'Content-Type': 'application/json',
+                    Accept: 'application/json',
+                    Authorization: `Bearer ${token}`,
+                },
+                data: JSON.stringify({ listings: listings.map(stripLocalKeys) }),
+                onload(response) {
+                    if (response.status === 401) {
+                        return reject('API token rejected. Use the menu to set a new one.');
+                    }
 
-                if (response.status === 429) {
-                    return reject('Rate limited by the API. It will recover in a minute.');
-                }
+                    if (response.status === 429) {
+                        return reject('Rate limited by the API. It will recover in a minute.');
+                    }
 
-                if (response.status !== 200) {
-                    return reject(`API returned ${response.status}.`);
-                }
+                    if (response.status !== 200) {
+                        return reject(`API returned ${response.status}.`);
+                    }
 
-                let body;
-                try {
-                    body = JSON.parse(response.responseText);
-                } catch (error) {
-                    return reject('API returned something that was not JSON.');
-                }
+                    let body;
+                    try {
+                        body = JSON.parse(response.responseText);
+                    } catch (error) {
+                        return reject('API returned something that was not JSON.');
+                    }
 
-                // Order is guaranteed by the endpoint, which is how results zip back onto the
-                // rows: a page can hold two listings of the same item and roll that differ
-                // only in uid, so there is no key to match on.
-                resolve(body.data.map((valuation, index) => ({
-                    valuation,
-                    listing: listings[index],
-                })));
-            },
-            onerror() {
-                reject('Could not reach the API.');
-            },
+                    // Order is guaranteed by the endpoint, which is how results zip back onto the
+                    // rows: a page can hold two listings of the same item and roll that differ
+                    // only in uid, so there is no key to match on.
+                    resolve(body.data.map((valuation, index) => ({
+                        valuation,
+                        listing: listings[index],
+                    })));
+                },
+                onerror() {
+                    reject('Could not reach the API.');
+                },
+            });
         });
-      });
     }
 
     function stripLocalKeys(listing) {

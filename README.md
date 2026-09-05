@@ -106,6 +106,18 @@ Requires the `/auction-valuations` endpoint on
 [torn-data-services-api](https://github.com/josh088/torn-data-services-api). Every response
 carries a `schema_version`; this script targets **version 1**.
 
+## Developing
+
+```
+npx eslint torn-auction-insights.user.js
+```
+
+`no-undef` is the rule that matters. `node --check` validates syntax and will happily pass a
+reference to a variable that is not in scope — which shipped once, as a `ReferenceError` that
+only appeared in the browser.
+
+Bump `@version` in the header on every change, or Tampermonkey will not offer the update.
+
 ## Licence
 
 MIT
