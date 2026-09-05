@@ -35,6 +35,11 @@ expanding a row's details panel is never necessary.
 The token is stored in Tampermonkey's own storage, which page scripts cannot read. Requests go
 out through `GM_xmlhttpRequest`, so nothing on `torn.com` can see the token or the responses.
 
+The floating panel lists every listing on the page. **Click its header to collapse it** — the
+choice is remembered, so it stays as you left it. The `×` dismisses it for the current page
+only, and is deliberately not remembered: a panel that never came back would look like the
+script had broken.
+
 ## Reading the badge
 
 ```

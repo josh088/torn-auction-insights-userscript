@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Auction Insights
 // @namespace    https://github.com/josh088/torn-auction-insights-userscript
-// @version      1.0.1
+// @version      1.1.0
 // @description  Annotates Torn's auction house with realised-price valuations, so you can size a maximum bid without leaving the page.
 // @author       josh088
 // @match        https://www.torn.com/amarket.php*
@@ -366,19 +366,30 @@
         document.body.appendChild(panel);
     }
 
+    /**
+     * Collapsed state, remembered across page loads.
+     *
+     * The panel sits over the listing table, so on a wide page it is reference and on a narrow
+     * one it is in the way. Whichever the reader decided last time is the one they meant.
+     */
+    function isCollapsed() {
+        return GM_getValue('panel_collapsed', false) === true;
+    }
+
     function renderPanel(paired, error) {
         document.querySelector('.tai-summary')?.remove();
 
         const panel = document.createElement('div');
         panel.className = 'tai-summary';
         panel.style.cssText = `
-            position:fixed; right:16px; top:80px; z-index:99998; width:300px;
-            max-height:60vh; overflow:auto; padding:10px 12px; border-radius:6px;
-            background:#1c1c1c; color:#ddd; border:1px solid #3a3a3a;
+            position:fixed; right:16px; top:80px; z-index:99998;
+            border-radius:6px; background:#1c1c1c; color:#ddd; border:1px solid #3a3a3a;
             font:11px/1.5 system-ui, sans-serif; box-shadow:0 4px 16px rgba(0,0,0,.4);
         `;
 
         if (error) {
+            panel.style.width = '300px';
+            panel.style.padding = '10px 12px';
             panel.innerHTML = `<b>Auction Insights</b><div style="margin-top:6px;color:#d96b6b">${error}</div>`;
             document.body.appendChild(panel);
             return;
@@ -388,25 +399,58 @@
 
         // The row annotations are the primary surface; this panel exists so a stale DOM
         // selector degrades into "less convenient" rather than "shows nothing".
-        panel.innerHTML =
-            `<div style="display:flex;justify-content:space-between"><b>Auction Insights</b>
-               <span class="tai-close" style="cursor:pointer;opacity:.6">×</span></div>
-             <div style="opacity:.7;margin-bottom:6px">${priced} of ${paired.length} priced</div>` +
-            paired
-                .map(({ valuation, listing }, index) => {
-                    const { label, tone } = verdict(valuation);
-                    const percentile = valuation.current_bid_percentile;
-                    return `<div class="tai-line" data-index="${index}"
-                                 style="cursor:pointer;padding:3px 0;border-top:1px solid #2c2c2c">
-                        <b style="color:${tone}">${label}</b> ${listing._name}
-                        <span style="opacity:.6">${valuation.roll}</span><br>
-                        <span style="opacity:.75">median ${valuation.distribution ? money(valuation.distribution.median) : '—'}${
-                        percentile === null || percentile === undefined ? '' : ` · bid at ${Math.round(percentile)}%`
-                    }</span></div>`;
-                })
-                .join('');
+        const header = `
+            <div class="tai-head" style="display:flex;gap:8px;align-items:center;cursor:pointer;
+                                         padding:8px 12px;user-select:none">
+              <span class="tai-chevron" style="opacity:.6;width:8px">${isCollapsed() ? '▸' : '▾'}</span>
+              <b>Auction Insights</b>
+              <span style="opacity:.7;margin-left:auto">${priced}/${paired.length}</span>
+              <span class="tai-close" style="cursor:pointer;opacity:.6;padding-left:4px">×</span>
+            </div>`;
 
+        const body = paired
+            .map(({ valuation, listing }, index) => {
+                const { label, tone } = verdict(valuation);
+                const percentile = valuation.current_bid_percentile;
+                return `<div class="tai-line" data-index="${index}"
+                             style="cursor:pointer;padding:3px 0;border-top:1px solid #2c2c2c">
+                    <b style="color:${tone}">${label}</b> ${listing._name}
+                    <span style="opacity:.6">${valuation.roll}</span><br>
+                    <span style="opacity:.75">median ${valuation.distribution ? money(valuation.distribution.median) : '—'}${
+                    percentile === null || percentile === undefined ? '' : ` · bid at ${Math.round(percentile)}%`
+                }</span></div>`;
+            })
+            .join('');
+
+        panel.innerHTML = `${header}<div class="tai-body" style="padding:0 12px 10px;
+                                          max-height:60vh;overflow:auto">${body}</div>`;
+
+        const bodyEl = panel.querySelector('.tai-body');
+        const chevron = panel.querySelector('.tai-chevron');
+
+        function applyCollapsed(collapsed) {
+            // display rather than the `hidden` attribute: we are a guest in Torn's stylesheet
+            // and a page-level `[hidden]` rule would defeat the attribute silently.
+            bodyEl.style.display = collapsed ? 'none' : '';
+            chevron.textContent = collapsed ? '▸' : '▾';
+            // Collapsed it is a title bar, so it should not hold a listing-panel's width.
+            panel.style.width = collapsed ? 'auto' : '300px';
+        }
+
+        applyCollapsed(isCollapsed());
+
+        panel.querySelector('.tai-head').addEventListener('click', (event) => {
+            if (event.target.classList.contains('tai-close')) return;
+
+            const collapsed = bodyEl.style.display !== 'none';
+            GM_setValue('panel_collapsed', collapsed);
+            applyCollapsed(collapsed);
+        });
+
+        // Close is for this page only and is deliberately not remembered: a panel that never
+        // came back would look like the script had broken.
         panel.querySelector('.tai-close').addEventListener('click', () => panel.remove());
+
         panel.querySelectorAll('.tai-line').forEach((line) => {
             line.addEventListener('click', () => {
                 const { valuation, listing } = paired[Number(line.dataset.index)];
