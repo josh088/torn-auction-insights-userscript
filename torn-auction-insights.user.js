@@ -1,7 +1,7 @@
 // ==UserScript==
 // @name         Torn Auction Insights
 // @namespace    https://github.com/josh088/torn-auction-insights-userscript
-// @version      1.2.0
+// @version      1.2.1
 // @description  Annotates Torn's auction house with realised-price valuations, so you can size a maximum bid without leaving the page.
 // @author       josh088
 // @match        https://www.torn.com/amarket.php*
@@ -51,7 +51,15 @@
      */
     const ROW_SELECTORS = ['ul.item-list > li', 'ul[class*="auction"] > li', 'li[class*="item"]'];
 
-    const state = { seen: new Set() };
+    /**
+     * `shown` is the signature currently on screen; `pending` is one being fetched.
+     *
+     * Deliberately not a set of everything ever seen. That was the first version, and it
+     * conflated "we have valued this set before" with "this set is what is displayed" — so
+     * switching Weapons -> Armor -> Weapons sent the same listing ids again, matched the set,
+     * and bailed out with the Armor results still on screen.
+     */
+    const state = { shown: null, pending: null };
 
     // ---------------------------------------------------------------- token
 
@@ -154,10 +162,11 @@
      * fire twice — but dropping the overflow silently would read as "that is all there is",
      * which is the one thing a tool like this must never do.
      */
-    function valuate(listings) {
+    function valuate(listings, signature) {
         const token = getToken();
 
         if (!token) {
+            state.pending = null;
             renderPanel([], 'No API token set. Use the Tampermonkey menu -> "Set API token".');
             return;
         }
@@ -170,10 +179,24 @@
         Promise.all(chunks.map((chunk) => requestChunk(chunk, token)))
             .then((results) => {
                 const paired = results.flat();
+                state.shown = signature;
+
+                // Clear the previous view's furniture before drawing this one. Torn may reuse
+                // row elements between tabs rather than recreating them, which would leave a
+                // Weapons badge sitting on an Armor row — and a detail panel left open is
+                // describing an item that is no longer on screen.
+                document.querySelectorAll('.tai-badge').forEach((badge) => badge.remove());
+                document.querySelector('.tai-detail')?.remove();
+
                 paired.forEach(({ valuation, listing }) => annotateRow(listing, valuation));
                 renderPanel(paired, null);
             })
-            .catch((message) => renderPanel([], message));
+            .catch((message) => renderPanel([], message))
+            // Cleared either way: on failure the next identical payload should retry rather
+            // than be mistaken for a request still in flight.
+            .finally(() => {
+                state.pending = null;
+            });
     }
 
     function requestChunk(listings, token) {
@@ -502,17 +525,23 @@
 
         if (!isAuctionList(body)) return;
 
-        // The page refetches on tab switches and paging; a signature keeps one page from
-        // being valued repeatedly while still valuing the next one.
+        // The page refetches on tab switches, paging and its own timers. Only a set that is
+        // not already on screen is worth valuing — but "already on screen" is the test, not
+        // "seen before", or returning to a tab leaves the previous tab's results up.
         const signature = body.list.map((r) => r.ID).join(',');
-        if (state.seen.has(signature)) return;
-        state.seen.add(signature);
+        if (signature === state.shown || signature === state.pending) return;
 
         const listings = body.list.map(toListing).filter(Boolean);
         if (!listings.length) return;
 
+        // Re-fetched rather than cached, deliberately. A cached valuation carries the bid as
+        // it stood when it was taken, and bids move — showing "bid at 77%" against a number
+        // that has since been outbid is worse than spending one request. Tab switching cannot
+        // approach the 60/min throttle.
+        state.pending = signature;
+
         // Rows render after the response resolves, so give the page a tick to draw them.
-        setTimeout(() => valuate(listings), 400);
+        setTimeout(() => valuate(listings, signature), 400);
     }
 
     const nativeOpen = XMLHttpRequest.prototype.open;
